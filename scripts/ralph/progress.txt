@@ -15,6 +15,8 @@ Started: Thu Mar 26 10:39:05 PM UTC 2026
 - ort v2: Session::run takes `&mut self`; use TensorRef::from_array_view(&owned_array) for inputs; try_extract_tensor returns (&Shape, &[f32]) where Shape derefs to [i64]
 - ort v2 ndarray version: ort 2.0.0-rc.12 uses ndarray 0.17 — must match in Cargo.toml
 - pyannote aggregation: skip_aggregation=True in diarization pipeline, binarization happens on per-chunk outputs BEFORE aggregation
+- Fbank features: frame=400 samples (25ms), hop=160 (10ms), pre-emphasis=0.97, Hamming window, radix-2 FFT, 80 mel triangular filters, log energy
+- WeSpeaker ResNet34 default embedding dim: 256
 ---
 
 ## 2026-03-26 - US-010
@@ -53,4 +55,17 @@ Started: Thu Mar 26 10:39:05 PM UTC 2026
   - try_extract_tensor returns (&Shape, &[f32]) — Shape derefs to [i64], data is flat row-major
   - pyannote uses skip_aggregation=True then binarizes per-chunk before passing to embedding extraction
   - Hamming window: 0.54 - 0.46 * cos(2πi/(n-1)), endpoints are 0.08, peak is 1.0
+---
+
+## 2026-03-26 - US-013
+- Implemented speaker embedding extraction in src/diarize/embedding.rs
+- 80-bin fbank feature computation: pre-emphasis, Hamming window, radix-2 FFT, mel filterbank, log energy
+- Per-(chunk, speaker) extraction: uses binarized segmentation to select active speaker audio regions
+- Batched ONNX inference via WeSpeaker model, NaN for inactive speakers
+- Files changed: src/diarize/mod.rs, src/diarize/embedding.rs
+- **Learnings for future iterations:**
+  - FFT implemented as iterative radix-2 Cooley-Tukey — requires power-of-2 input (frame_length.next_power_of_two())
+  - Kaldi fbank convention: power spectrum normalized by 1/N, log energy uses ln() not log10()
+  - WeSpeaker ResNet34 default embedding dim is 256
+  - Speaker audio extraction maps frame indices to sample ranges using samples_per_frame ratio
 ---

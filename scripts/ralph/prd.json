@@ -80,7 +80,7 @@
         "cargo test passes"
       ],
       "priority": 13,
-      "passes": false,
+      "passes": true,
       "notes": "Fbank features: standard mel-frequency filterbank energies. Frame = 400 samples (25ms at 16kHz), hop = 160 samples (10ms). Apply pre-emphasis (0.97), Hamming window, FFT, then 80 mel-scale triangular filters, log energy. This matches torchaudio.compliance.kaldi.fbank. The WeSpeaker model expects fbank features, NOT raw waveform. Inactive speaker regions (no speech activity in that window) get NaN embeddings — these are filtered out before clustering."
     },
     {
