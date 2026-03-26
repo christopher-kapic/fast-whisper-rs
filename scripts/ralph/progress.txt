@@ -9,6 +9,9 @@ Started: Thu Mar 26 10:39:05 PM UTC 2026
 - Pipeline clustering attr: pipeline.klustering (not pipeline.clustering)
 - Pipeline segmentation model attr: pipeline._segmentation.model_
 - WeSpeaker ONNX model available at hbredin/wespeaker-voxceleb-resnet34-LM as speaker-embedding.onnx
+- ort v2: requires `std` + `tls-native` features with `download-binaries`; ort::Error<SessionBuilder> not Send+Sync — use .map_err() not `?` with anyhow
+- .npz parsing: use zip crate to extract entries, npyz::NpyFile to parse individual .npy arrays into ndarray
+- Diarization models cached at ~/.cache/fast-whisper-rs/diarization/ (XDG_CACHE_HOME respected)
 ---
 
 ## 2026-03-26 - US-010
@@ -21,4 +24,16 @@ Started: Thu Mar 26 10:39:05 PM UTC 2026
   - PLDA params in pipeline use capitalized keys: 'Phi', 'Sigma'
   - WeSpeaker ONNX model already exists on HuggingFace — no need to re-export
   - Workflow supports both automatic (on release) and manual (workflow_dispatch) triggers
+---
+
+## 2026-03-26 - US-011
+- Implemented diarization model download and caching module at src/diarize/mod.rs
+- Added dependencies: ort (v2.0.0-rc.12), ndarray, npyz, zip
+- Files changed: Cargo.toml, src/main.rs, src/diarize/mod.rs
+- **Learnings for future iterations:**
+  - ort v2 requires `std` feature for ndarray NdFloat trait; also needs a TLS feature (`tls-native`) when using `download-binaries`
+  - ort::Error<SessionBuilder> doesn't implement Send+Sync, so can't use `?` with anyhow directly — use `.map_err(|e| anyhow::anyhow!(...))` instead
+  - SessionBuilder::commit_from_file requires `&mut self`, so builder must be `let mut`
+  - .npz files are zip archives of .npy files — use zip crate to extract, npyz to parse individual .npy arrays
+  - PLDA files use capitalized keys: 'Phi' and 'Sigma' in plda.npz, 'mean' and 'transform' in xvec_transform.npz
 ---

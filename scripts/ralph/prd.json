@@ -41,7 +41,7 @@
         "cargo test passes"
       ],
       "priority": 11,
-      "passes": false,
+      "passes": true,
       "notes": "Use reqwest (already a dep) for downloading. For .npz loading, the files contain numpy arrays — parse the .npz format (zip of .npy files) manually or use a crate like npyz. The PLDA files contain: xvec_transform.npz has 'mean' and 'transform' arrays, plda.npz has 'phi', 'sigma' arrays. ort execution providers: try CUDAExecutionProvider first, fall back to CPUExecutionProvider. Match the device logic from model.rs — if --device-id is a number, use CUDA; if 'mps', use CoreML (ort supports it); else CPU."
     },
     {
