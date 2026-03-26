@@ -5,6 +5,8 @@ mod cli;
 #[allow(dead_code)]
 mod convert;
 #[allow(dead_code)]
+mod diarize;
+#[allow(dead_code)]
 mod inference;
 #[allow(dead_code)]
 mod model;

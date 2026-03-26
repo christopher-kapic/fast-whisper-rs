@@ -1,0 +1,24 @@
+# Ralph Progress Log
+Started: Thu Mar 26 10:39:05 PM UTC 2026
+---
+
+## Codebase Patterns
+- pyannote segmentation model input: (batch, 1, num_samples) float32 at 16kHz; output: (batch, num_frames, num_speakers) float32
+- WeSpeaker embedding model input: (batch, num_frames, 80) fbank features; output: (batch, embedding_dim) float32
+- PLDA files: xvec_transform.npz has 'mean' and 'transform'; plda.npz has 'Phi' and 'Sigma' (note capitalization in Python source)
+- Pipeline clustering attr: pipeline.klustering (not pipeline.clustering)
+- Pipeline segmentation model attr: pipeline._segmentation.model_
+- WeSpeaker ONNX model available at hbredin/wespeaker-voxceleb-resnet34-LM as speaker-embedding.onnx
+---
+
+## 2026-03-26 - US-010
+- Implemented Python export script at scripts/export_diarization_models.py
+- Implemented GitHub Actions workflow at .github/workflows/export-models.yml
+- Files changed: scripts/export_diarization_models.py, .github/workflows/export-models.yml
+- **Learnings for future iterations:**
+  - pyannote pipeline uses `pipeline._segmentation.model_` for the segmentation model
+  - pyannote pipeline uses `pipeline.klustering` for the clustering component (unusual spelling)
+  - PLDA params in pipeline use capitalized keys: 'Phi', 'Sigma'
+  - WeSpeaker ONNX model already exists on HuggingFace — no need to re-export
+  - Workflow supports both automatic (on release) and manual (workflow_dispatch) triggers
+---
