@@ -102,3 +102,15 @@ Started: Thu Mar 26 10:39:05 PM UTC 2026
   - When testing field order in JSON with nested objects, "text" key appears inside speaker entries before the top-level one — use rfind for last occurrence
   - Null end timestamps in ASR chunks are treated as f64::MAX for argmin distance computation
 ---
+
+## 2026-03-26 - US-016
+- Implemented Metal GPU auto-detection in src/model.rs select_device()
+- When compiled with `metal` feature on macOS and device_id is default "0", tries Device::new_metal(0) first
+- Falls back to CPU if Metal init fails, prints info message to stderr on success
+- Explicit --device-id mps still works; explicit non-"0" IDs skip auto-detection
+- Added compile-time gated unit tests for auto-detection logic
+- Files changed: src/model.rs
+- **Learnings for future iterations:**
+  - `#[cfg(all(target_os = "macos", feature = "metal"))]` can gate a bare `if` statement (no braces block needed for the cfg)
+  - Auto-detection only triggers on default device_id "0" — explicit numeric IDs go through CUDA path
+---

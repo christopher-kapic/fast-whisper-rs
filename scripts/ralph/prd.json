@@ -138,7 +138,7 @@
         "cargo test passes"
       ],
       "priority": 16,
-      "passes": false,
+      "passes": true,
       "notes": "Use #[cfg(all(target_os = \"macos\", feature = \"metal\"))] to gate the auto-detection. The change is in src/model.rs select_device(). When device_id == '0' and we're on macOS with metal feature, try Device::new_metal(0) first. If it fails, fall back to CPU as before. This is a small quality-of-life improvement."
     },
     {
