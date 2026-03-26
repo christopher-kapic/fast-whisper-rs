@@ -17,6 +17,9 @@ Started: Thu Mar 26 10:39:05 PM UTC 2026
 - pyannote aggregation: skip_aggregation=True in diarization pipeline, binarization happens on per-chunk outputs BEFORE aggregation
 - Fbank features: frame=400 samples (25ms), hop=160 (10ms), pre-emphasis=0.97, Hamming window, radix-2 FFT, 80 mel triangular filters, log energy
 - WeSpeaker ResNet34 default embedding dim: 256
+- AHC clustering: average linkage with cosine distance on PLDA-transformed embeddings, threshold 0.6
+- PLDA transform: center (subtract mean), apply LDA matrix, truncate to lda_dim (128), L2 normalize
+- Export script PLDA files: xvec_transform.npz stores 'mean' + 'transform' from pipeline.klustering.preprocessing_transform_params_; plda.npz stores 'phi'+'sigma' from plda_params_ (lowercase keys despite Python using 'Phi'/'Sigma')
 ---
 
 ## 2026-03-26 - US-010
@@ -68,4 +71,19 @@ Started: Thu Mar 26 10:39:05 PM UTC 2026
   - Kaldi fbank convention: power spectrum normalized by 1/N, log energy uses ln() not log10()
   - WeSpeaker ResNet34 default embedding dim is 256
   - Speaker audio extraction maps frame indices to sample ranges using samples_per_frame ratio
+---
+
+## 2026-03-26 - US-014
+- Implemented speaker clustering pipeline in src/diarize/clustering.rs
+- L2 normalization, cosine distance, PLDA transform (center + LDA + truncate + L2 norm)
+- Agglomerative hierarchical clustering with average linkage, threshold-based stopping
+- Support for --num-speakers, --min-speakers, --max-speakers constraints
+- Filtering of NaN embeddings and inactive speakers (< 20% activity)
+- Returns HashMap<(chunk_idx, speaker_idx), global_speaker_id>
+- Files changed: src/diarize/mod.rs, src/diarize/clustering.rs
+- **Learnings for future iterations:**
+  - ndarray `dot` and `t()` work well for matrix multiplication — no need for manual loops
+  - AHC average linkage must use original pairwise distances (not working distances) for correctness
+  - clippy requires collapsing nested `if` statements — use `&&` to chain conditions
+  - PldaModel (phi, sigma) is reserved for future VBx refinement step
 ---

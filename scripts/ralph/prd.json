@@ -99,7 +99,7 @@
         "cargo test passes"
       ],
       "priority": 14,
-      "passes": false,
+      "passes": true,
       "notes": "pyannote's default clustering is VBx (AHC + Variational Bayes refinement with PLDA). For a first pass, AHC with PLDA scoring is sufficient — VBx refinement can be added later. PLDA transform: center embeddings (subtract mean), apply LDA matrix, then compute log-likelihood ratios between pairs. AHC: start with each embedding as its own cluster, merge closest pair until threshold is reached or speaker count constraints are satisfied. Use ndarray for all linear algebra. The threshold hyperparameter (0.6 default) controls over/under-clustering."
     },
     {
