@@ -156,7 +156,7 @@
         "cargo test passes"
       ],
       "priority": 17,
-      "passes": false,
+      "passes": true,
       "notes": "Tests that require actual ONNX model files or GPU should use #[ignore]. Tests for the post-processing logic (segment merging, argmin alignment) should work without models — use synthetic data. For the mock ONNX approach: either use small hand-crafted ONNX models (single linear layer) or test the pipeline stages independently with known inputs/outputs."
     }
   ]

@@ -114,3 +114,19 @@ Started: Thu Mar 26 10:39:05 PM UTC 2026
   - `#[cfg(all(target_os = "macos", feature = "metal"))]` can gate a bare `if` statement (no braces block needed for the cfg)
   - Auto-detection only triggers on default device_id "0" — explicit numeric IDs go through CUDA path
 ---
+
+## 2026-03-26 - US-017
+- Implemented end-to-end validation and diarization integration tests in tests/diarization_integration.rs
+- 20 tests total (18 run, 2 ignored requiring ONNX models):
+  - CLI integration: diarization trigger via --hf-token (3 tests)
+  - Cache directory: XDG_CACHE_HOME, default path, skip-if-exists, missing file detection (4 tests)
+  - Full pipeline post-processing: 2-speaker, 3-speaker, merged chunks, empty assignments, null timestamps (5 tests)
+  - Output JSON: speakers field structure, field order, null timestamps, speaker labels, roundtrip, non-diarized empty speakers (6 tests)
+  - Ignored: full pipeline with models, model download cache structure (2 tests)
+- All 171 existing tests continue to pass (no regressions)
+- Files changed: tests/diarization_integration.rs (new)
+- **Learnings for future iterations:**
+  - Binary crate internal types aren't accessible from integration tests — replicate minimal structs or test via CLI/JSON output
+  - Integration tests for pipeline post-processing can be fully tested with synthetic ndarray data without ONNX models
+  - serde field order is preserved with derive(Serialize) — useful for validating JSON key ordering in tests
+---
