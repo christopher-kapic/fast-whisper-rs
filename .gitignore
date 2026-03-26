@@ -1,0 +1,10 @@
+/target
+Cargo.lock
+*.swp
+*.swo
+*~
+.DS_Store
+output.json
+output.srt
+output.vtt
+output.txt
