@@ -1,3 +1,4 @@
+pub mod clustering;
 pub mod embedding;
 pub mod segmentation;
 
