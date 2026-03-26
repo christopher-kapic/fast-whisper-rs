@@ -1,3 +1,5 @@
+pub mod segmentation;
+
 use anyhow::{bail, Context, Result};
 use indicatif::{ProgressBar, ProgressStyle};
 use ndarray::Array2;
