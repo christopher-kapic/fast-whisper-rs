@@ -120,7 +120,7 @@
         "cargo test passes"
       ],
       "priority": 15,
-      "passes": false,
+      "passes": true,
       "notes": "The Python post-processing is in insanely-fast-whisper/src/insanely_fast_whisper/utils/diarize.py. Key details: (1) segment merging uses the START of the next different-speaker segment as the END of the current super-segment, (2) argmin alignment progressively crops the transcript list for efficiency, (3) null end timestamps in ASR chunks are treated as f64::MAX for argmin, (4) group_by_speaker is always false in insanely-fast-whisper (each ASR chunk gets a speaker, not grouped). The speakers field in output JSON changes from [] to the list of {speaker, text, timestamp} dicts."
     },
     {

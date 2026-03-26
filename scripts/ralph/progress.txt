@@ -87,3 +87,18 @@ Started: Thu Mar 26 10:39:05 PM UTC 2026
   - clippy requires collapsing nested `if` statements — use `&&` to chain conditions
   - PldaModel (phi, sigma) is reserved for future VBx refinement step
 ---
+
+## 2026-03-26 - US-015
+- Implemented diarization post-processing and CLI integration
+- New module: src/diarize/postprocess.rs with timeline reconstruction, segment merging, and transcript alignment
+- Updated src/output.rs: added SpeakerEntry, DiarizedTranscriptOutput, build_diarized_output(), write_diarized_output()
+- Updated src/diarize/mod.rs: added run_pipeline() orchestration function
+- Updated src/main.rs: diarization wired when --hf-token != "no_token", uses diarized output and success message
+- Files changed: src/diarize/postprocess.rs (new), src/diarize/mod.rs, src/output.rs, src/main.rs
+- **Learnings for future iterations:**
+  - Python merge_segments uses next segment's start as current segment's end (not the current segment's actual end)
+  - Python argmin alignment progressively crops transcript list — each diar segment only sees remaining chunks
+  - serde_json::to_value uses BTreeMap (or IndexMap with preserve_order) — field order in JSON depends on serde_json features
+  - When testing field order in JSON with nested objects, "text" key appears inside speaker entries before the top-level one — use rfind for last occurrence
+  - Null end timestamps in ASR chunks are treated as f64::MAX for argmin distance computation
+---
