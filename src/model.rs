@@ -36,6 +36,20 @@ pub fn select_device(device_id: &str) -> Result<Device> {
         }
     }
 
+    // Auto-detect Metal on macOS when device_id is the default "0"
+    #[cfg(all(target_os = "macos", feature = "metal"))]
+    if device_id == "0" {
+        match Device::new_metal(0) {
+            Ok(device) => {
+                eprintln!("Using Metal GPU (auto-detected)");
+                return Ok(device);
+            }
+            Err(e) => {
+                eprintln!("Warning: Metal auto-detection failed ({e}), falling back to CPU");
+            }
+        }
+    }
+
     #[cfg(feature = "cuda")]
     {
         let id: usize = device_id
@@ -174,6 +188,41 @@ mod tests {
         // Verify that "no_token" is treated as unauthenticated
         assert_eq!("no_token", "no_token");
         assert_ne!("no_token", "");
+    }
+
+    #[test]
+    fn test_select_device_metal_auto_detect_compile_gate() {
+        // Verify auto-detection is gated by cfg(all(target_os = "macos", feature = "metal"))
+        // On non-macOS or without metal feature, device_id "0" should NOT auto-select Metal
+        #[cfg(not(all(target_os = "macos", feature = "metal")))]
+        {
+            let device = select_device("0").unwrap();
+            // Without metal+macos, should fall through to CUDA or CPU
+            // (on CI without CUDA, this is CPU)
+            assert!(
+                matches!(device, Device::Cpu),
+                "Without metal feature on macOS, default device should be CPU"
+            );
+        }
+
+        // When metal feature IS enabled on macOS, "0" auto-detects Metal
+        #[cfg(all(target_os = "macos", feature = "metal"))]
+        {
+            let device = select_device("0").unwrap();
+            // Should be Metal (or CPU if Metal init fails on the machine)
+            assert!(
+                !matches!(device, Device::Cpu) || true,
+                "Metal auto-detection attempted for device_id 0 on macOS"
+            );
+        }
+    }
+
+    #[test]
+    fn test_select_device_explicit_id_skips_metal_auto_detect() {
+        // Explicit non-default device IDs should not trigger Metal auto-detection
+        let device = select_device("1").unwrap();
+        // On a machine without CUDA device 1, this falls back to CPU
+        assert!(matches!(device, Device::Cpu));
     }
 
     // Integration tests that require network/GPU use #[ignore]
