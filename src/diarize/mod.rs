@@ -1,5 +1,6 @@
 pub mod clustering;
 pub mod embedding;
+pub mod postprocess;
 pub mod segmentation;
 
 use anyhow::{bail, Context, Result};
@@ -273,6 +274,69 @@ pub fn load_all_models(cache_dir: &Path, device_id: &str) -> Result<DiarizationM
         plda_transform,
         plda_model,
     })
+}
+
+/// Run the full diarization pipeline: segmentation → embedding → clustering → post-processing.
+///
+/// Returns speaker-labeled chunks aligned with the ASR transcript.
+pub fn run_pipeline(
+    models: &mut DiarizationModels,
+    samples: &[f32],
+    transcript: &[crate::inference::Segment],
+    batch_size: usize,
+    num_speakers: Option<usize>,
+    min_speakers: Option<usize>,
+    max_speakers: Option<usize>,
+) -> Result<Vec<postprocess::SpeakerChunk>> {
+    let sample_rate = 16000usize;
+
+    // Stage 1: Segmentation
+    let seg_config = segmentation::SegmentationConfig::default();
+    let seg_output =
+        segmentation::run_segmentation(&mut models.segmentation, samples, &seg_config)?;
+
+    // Stage 2: Embedding extraction
+    let embeddings = embedding::extract_embeddings(
+        &mut models.embedding,
+        samples,
+        &seg_output.chunk_binarized,
+        seg_output.window_samples,
+        seg_output.step_samples,
+        batch_size,
+    )?;
+
+    // Stage 3: Clustering
+    let cluster_config = clustering::ClusteringConfig {
+        num_speakers,
+        min_speakers,
+        max_speakers,
+        ..Default::default()
+    };
+    let cluster_output = clustering::cluster_embeddings(
+        &embeddings,
+        &seg_output.chunk_binarized,
+        &models.plda_transform,
+        &models.plda_model,
+        &cluster_config,
+    )?;
+
+    if cluster_output.assignments.is_empty() {
+        return Ok(vec![]);
+    }
+
+    // Stage 4: Post-processing
+    let step_duration = seg_output.step_samples as f64 / sample_rate as f64;
+    let timeline = postprocess::reconstruct_timeline(
+        &seg_output.chunk_binarized,
+        &cluster_output.assignments,
+        step_duration,
+        seg_output.frame_duration,
+    );
+
+    let merged = postprocess::merge_segments(&timeline);
+    let speaker_chunks = postprocess::align_with_transcript(&merged, transcript);
+
+    Ok(speaker_chunks)
 }
 
 #[cfg(test)]
