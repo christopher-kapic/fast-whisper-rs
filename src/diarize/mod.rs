@@ -1,3 +1,4 @@
+pub mod embedding;
 pub mod segmentation;
 
 use anyhow::{bail, Context, Result};
