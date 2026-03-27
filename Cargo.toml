@@ -1,6 +1,6 @@
 [package]
 name = "fast-whisper-rs"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2021"
 description = "A fast Whisper CLI built on candle — Rust reimplementation of insanely-fast-whisper"
 license = "MIT"
@@ -16,7 +16,7 @@ clap = { version = "4", features = ["derive"] }
 candle-core = { git = "https://github.com/huggingface/candle.git" }
 candle-nn = { git = "https://github.com/huggingface/candle.git" }
 candle-transformers = { git = "https://github.com/huggingface/candle.git" }
-hf-hub = "0.3"
+hf-hub = "0.5"
 indicatif = "0.17"
 reqwest = { version = "0.12", features = ["blocking"] }
 serde = { version = "1", features = ["derive"] }
