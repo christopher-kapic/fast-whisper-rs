@@ -141,8 +141,10 @@ pub fn load_whisper_model(
     // Load mel filters
     let mel_filters = load_mel_filters(&config)?;
 
-    // Load model weights with FP16 (matching Python's torch_dtype=float16)
-    let dtype = if device.is_cpu() { DType::F32 } else { DType::F16 };
+    // Load model weights — use FP16 on CUDA for performance, FP32 elsewhere.
+    // Metal must use FP32 because candle generates positional embeddings as F32
+    // internally (sinusoids), causing dtype mismatch with F16 weights on add.
+    let dtype = if device.is_cuda() { DType::F16 } else { DType::F32 };
     let vb = unsafe { VarBuilder::from_mmaped_safetensors(&[weights_path], dtype, &device)? };
     let model = m::model::Whisper::load(&vb, config.clone())?;
 

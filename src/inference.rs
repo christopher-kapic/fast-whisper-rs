@@ -47,7 +47,7 @@ pub fn pcm_to_mel_tensor(
     } else {
         mel_tensor
     };
-    if !device.is_cpu() {
+    if device.is_cuda() {
         Ok(mel_tensor.to_dtype(DType::F16)?)
     } else {
         Ok(mel_tensor)
