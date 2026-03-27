@@ -1,0 +1,83 @@
+# Export Diarization Models Workflow
+#
+# Exports pyannote segmentation/embedding ONNX models and PLDA artifacts,
+# then uploads them as release assets.
+#
+# Triggers:
+#   - Automatically on release creation
+#   - Manually via workflow_dispatch from the Actions tab
+#
+# Manual trigger:
+#   gh workflow run export-models.yml
+#
+# Required secrets:
+#   - HF_TOKEN: HuggingFace token with access to pyannote/speaker-diarization-3.1
+
+name: Export Diarization Models
+
+on:
+  release:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag to attach assets to (e.g. v0.1.0). If empty, creates artifacts only."
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install pyannote.audio torch onnx onnxruntime numpy huggingface_hub
+
+      - name: Export diarization models
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python scripts/export_diarization_models.py \
+            --output-dir ./diarization_models \
+            --hf-token "$HF_TOKEN"
+
+      - name: Upload artifacts (workflow_dispatch without release)
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag == ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: diarization-models
+          path: diarization_models/
+          retention-days: 30
+
+      - name: Determine release tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            echo "tag=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+          elif [ -n "${{ github.event.inputs.release_tag }}" ]; then
+            echo "tag=${{ github.event.inputs.release_tag }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload assets to release
+        if: steps.tag.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          for file in diarization_models/*; do
+            echo "Uploading $(basename "$file") to release $TAG..."
+            gh release upload "$TAG" "$file" --clobber
+          done
+          echo "All diarization model assets uploaded to release $TAG"

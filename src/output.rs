@@ -5,6 +5,7 @@ use std::path::Path;
 use anyhow::Result;
 use serde::Serialize;
 
+use crate::diarize::postprocess::SpeakerChunk;
 use crate::inference::Segment;
 
 /// A timestamp pair: [start, end] where end can be null.
@@ -18,7 +19,16 @@ struct OutputChunk {
     timestamp: Timestamp,
 }
 
-/// The top-level output JSON structure.
+/// A speaker entry in the diarized output JSON.
+/// Field order matches Python: speaker, text, timestamp.
+#[derive(Debug, Clone, Serialize)]
+struct SpeakerEntry {
+    speaker: String,
+    text: String,
+    timestamp: Timestamp,
+}
+
+/// The top-level output JSON structure (no diarization).
 /// Field order matches Python: speakers, chunks, text.
 #[derive(Debug, Clone, Serialize)]
 struct TranscriptOutput {
@@ -27,35 +37,69 @@ struct TranscriptOutput {
     text: String,
 }
 
-/// Build the output JSON structure from decoded segments.
-pub fn build_output(segments: &[Segment]) -> serde_json::Value {
-    let chunks: Vec<OutputChunk> = segments
+/// The top-level output JSON structure with diarization.
+/// Field order matches Python: speakers, chunks, text.
+#[derive(Debug, Clone, Serialize)]
+struct DiarizedTranscriptOutput {
+    speakers: Vec<SpeakerEntry>,
+    chunks: Vec<OutputChunk>,
+    text: String,
+}
+
+fn build_chunks(segments: &[Segment]) -> Vec<OutputChunk> {
+    segments
         .iter()
         .map(|seg| OutputChunk {
             text: seg.text.clone(),
             timestamp: Timestamp(seg.start, seg.end),
         })
-        .collect();
+        .collect()
+}
 
-    let full_text: String = segments
+fn build_full_text(segments: &[Segment]) -> String {
+    segments
         .iter()
         .map(|seg| seg.text.as_str())
         .collect::<Vec<&str>>()
-        .join("");
+        .join("")
+}
 
+/// Build the output JSON structure from decoded segments (no diarization).
+pub fn build_output(segments: &[Segment]) -> serde_json::Value {
     let output = TranscriptOutput {
         speakers: vec![],
-        chunks,
-        text: full_text,
+        chunks: build_chunks(segments),
+        text: build_full_text(segments),
     };
 
     serde_json::to_value(output).expect("Failed to serialize output")
 }
 
-/// Write the transcript JSON to a file at the given path.
-pub fn write_output(segments: &[Segment], transcript_path: &str) -> Result<()> {
-    let value = build_output(segments);
-    let json_string = serde_json::to_string_pretty(&value)?;
+/// Build the output JSON structure with diarization speaker labels.
+pub fn build_diarized_output(
+    segments: &[Segment],
+    speaker_chunks: &[SpeakerChunk],
+) -> serde_json::Value {
+    let speakers: Vec<SpeakerEntry> = speaker_chunks
+        .iter()
+        .map(|sc| SpeakerEntry {
+            speaker: sc.speaker.clone(),
+            text: sc.text.clone(),
+            timestamp: Timestamp(sc.start, sc.end),
+        })
+        .collect();
+
+    let output = DiarizedTranscriptOutput {
+        speakers,
+        chunks: build_chunks(segments),
+        text: build_full_text(segments),
+    };
+
+    serde_json::to_value(output).expect("Failed to serialize diarized output")
+}
+
+fn write_json_to_file(value: &serde_json::Value, transcript_path: &str) -> Result<()> {
+    let json_string = serde_json::to_string_pretty(value)?;
 
     let path = Path::new(transcript_path);
     if let Some(parent) = path.parent() {
@@ -69,6 +113,22 @@ pub fn write_output(segments: &[Segment], transcript_path: &str) -> Result<()> {
     file.write_all(b"\n")?;
 
     Ok(())
+}
+
+/// Write the transcript JSON to a file at the given path (no diarization).
+pub fn write_output(segments: &[Segment], transcript_path: &str) -> Result<()> {
+    let value = build_output(segments);
+    write_json_to_file(&value, transcript_path)
+}
+
+/// Write the diarized transcript JSON to a file at the given path.
+pub fn write_diarized_output(
+    segments: &[Segment],
+    speaker_chunks: &[SpeakerChunk],
+    transcript_path: &str,
+) -> Result<()> {
+    let value = build_diarized_output(segments, speaker_chunks);
+    write_json_to_file(&value, transcript_path)
 }
 
 /// Print the success message to stdout (matching Python exactly).
@@ -260,5 +320,76 @@ mod tests {
     #[test]
     fn test_success_message_with_diarization() {
         print_success_message("output.json", true);
+    }
+
+    #[test]
+    fn test_diarized_output_json_structure() {
+        let segments = sample_segments();
+        let speaker_chunks = vec![
+            SpeakerChunk {
+                speaker: "SPEAKER_00".to_string(),
+                text: " Hello world.".to_string(),
+                start: 0.0,
+                end: Some(2.5),
+            },
+            SpeakerChunk {
+                speaker: "SPEAKER_01".to_string(),
+                text: " How are you?".to_string(),
+                start: 2.5,
+                end: Some(5.0),
+            },
+        ];
+
+        let value = build_diarized_output(&segments, &speaker_chunks);
+
+        // speakers field should have entries with speaker labels
+        let speakers = value["speakers"].as_array().unwrap();
+        assert_eq!(speakers.len(), 2);
+        assert_eq!(speakers[0]["speaker"], "SPEAKER_00");
+        assert_eq!(speakers[0]["text"], " Hello world.");
+        assert_eq!(speakers[1]["speaker"], "SPEAKER_01");
+        assert_eq!(speakers[1]["text"], " How are you?");
+
+        // Verify speaker entry field order: speaker, text, timestamp
+        let speaker_json = serde_json::to_string(&speakers[0]).unwrap();
+        let speaker_pos = speaker_json.find("\"speaker\"").unwrap();
+        let text_pos = speaker_json.find("\"text\"").unwrap();
+        let ts_pos = speaker_json.find("\"timestamp\"").unwrap();
+        assert!(speaker_pos < text_pos);
+        assert!(text_pos < ts_pos);
+
+        // chunks and text still present
+        assert_eq!(value["chunks"].as_array().unwrap().len(), 2);
+        assert_eq!(value["text"], " Hello world. How are you?");
+
+        // Field order: speakers, chunks, text (at top level)
+        // Note: "text" also appears inside speaker entries, so use rfind for the top-level one
+        let json_str = serde_json::to_string(&value).unwrap();
+        let speakers_pos = json_str.find("\"speakers\"").unwrap();
+        let chunks_pos = json_str.find("\"chunks\"").unwrap();
+        let text_pos = json_str.rfind("\"text\"").unwrap(); // last occurrence is top-level
+        assert!(speakers_pos < chunks_pos);
+        assert!(chunks_pos < text_pos);
+    }
+
+    #[test]
+    fn test_diarized_output_timestamp_with_null() {
+        let segments = vec![Segment {
+            text: " Hello.".to_string(),
+            start: 0.0,
+            end: None,
+        }];
+        let speaker_chunks = vec![SpeakerChunk {
+            speaker: "SPEAKER_00".to_string(),
+            text: " Hello.".to_string(),
+            start: 0.0,
+            end: None,
+        }];
+
+        let value = build_diarized_output(&segments, &speaker_chunks);
+        let speakers = value["speakers"].as_array().unwrap();
+        let ts = speakers[0]["timestamp"].as_array().unwrap();
+        assert_eq!(ts[0].as_f64().unwrap(), 0.0);
+        assert!(ts[1].is_null());
     }
 }

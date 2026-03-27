@@ -1,0 +1,186 @@
+# Ralph Progress Log
+Started: 2026-03-26
+
+## Codebase Patterns
+- CLI args: clap derive API in `src/cli.rs`, validation in `validate_args()` exits with code 2
+- `--flash` is a string value arg ("True"/"False"), NOT a bare flag — use `value_parser`
+- `--diarization_model` needs `#[arg(long = "diarization_model")]` to preserve underscore
+- `--language` default is literal string `"None"`, checked via `is_auto_detect_language()`
+- `.en` model detection: `model_name.split('.').next_back() == Some("en")`
+- Dead code: use `#[allow(dead_code)]` on module declaration in main.rs for functions used in later stories
+- clippy: use `next_back()` instead of `last()` on `Split` iterators
+- Audio decoding: symphonia with `MediaSourceStream`, probe format, decode packets into `SampleBuffer<f32>`
+- Audio resampling: linear interpolation in `resample()`, mono conversion in `to_mono()`
+- Audio chunking: `chunk_audio()` splits into 30s (480000 sample) chunks, zero-pads last chunk
+- Convert subcommand: `run_convert()` in `src/convert.rs` reads JSON, converts to SRT/VTT/TXT, output filename is always `output.<format>`
+- Audio from bytes: `load_audio_from_bytes()` accepts `Vec<u8>` for URL-downloaded audio
+- URL detection: `is_url()` checks `starts_with("http://")` or `starts_with("https://")`
+- Audio download: `download_audio()` uses reqwest blocking client with indicatif progress bar
+- Integration tests: `assert_cmd` + `predicates` crates for CLI binary testing
+- WAV generation: RIFF header + fmt (PCM, channels, sample_rate, 16-bit) + data (i16 samples)
+- Flash Attention: compile-time via `flash-attn` cargo feature; runtime `--flash True` warns if not compiled
+- Unified loading: `load_audio()` dispatches to file or URL path automatically
+- Model loading: `hf-hub` ApiBuilder with `.with_token()` for auth, `Api::new()` for unauthenticated
+- Device selection: `select_device()` handles "mps", numeric CUDA IDs, CPU fallback (cfg-gated)
+- Mel filters: embedded via `include_bytes!` from `assets/melfilters{,128}.bytes`
+- Model weights: `VarBuilder::from_mmaped_safetensors` with F16 on GPU, F32 on CPU
+- WhisperModel struct: holds model, config, tokenizer, device, mel_filters together
+- Mel spectrogram: `m::audio::pcm_to_mel(config, samples, filters)` returns flat `Vec<f32>`, reshape to (1, n_mel, n_frames)
+- Mel tensor dtype: F16 on GPU, F32 on CPU (must match model weights dtype)
+- Decoder flow: `decoder.forward(tokens, audio_features, flush_kv_cache)` -> `decoder.final_linear(ys)` -> logits
+- KV cache: first call uses flush=true with full prompt, subsequent calls use flush=false with single token
+- Timestamp tokens: `no_timestamps_token + 1` is timestamp_begin; each increment = 0.02 seconds
+- Token suppression: `config.suppress_tokens` contains token IDs to mask during decoding
+- Language tokens: `<|en|>`, `<|fr|>`, etc. — looked up via tokenizer
+- Special tokens: SOT_TOKEN, EOT_TOKEN, TRANSCRIBE_TOKEN, TRANSLATE_TOKEN, NO_TIMESTAMPS_TOKEN in `m::` module
+- Batched encoding: stack mel tensors with `Tensor::cat(&mels, 0)`, run encoder once, extract per-item with `.i(i..i+1)`
+- Decoder is per-sequence (KV cache): must reset and decode each batch item sequentially after batched encoding
+- `transcribe()` in inference.rs: full pipeline — chunk audio, batch encode, sequential decode, progress bar
+- Output JSON: `build_output()` creates serde Value, `write_output()` writes to file, `print_success_message()` for stdout
+- serde_json `preserve_order` feature needed for JSON key ordering (speakers, chunks, text)
+- Timestamp type: tuple struct `Timestamp(f64, Option<f64>)` serializes as `[f64, f64]` or `[f64, null]`
+
+---
+
+## 2026-03-26 - US-001
+- Implemented full CLI argument parsing with clap derive API
+- All flags match insanely-fast-whisper exactly (names, defaults, types)
+- Convert subcommand stub with positional input_file, -f, -o, --verbose
+- Validation: speaker count mutual exclusivity, >= 1, min <= max
+- Helper functions: is_english_only_model, is_auto_detect_language, is_flash_enabled
+- 11 unit tests covering all acceptance criteria
+- Files changed: src/main.rs, src/cli.rs, Cargo.toml, .gitignore, CLAUDE.md
+- **Learnings for future iterations:**
+  - clap auto-converts underscores to hyphens — must override with `#[arg(long = "diarization_model")]`
+  - clippy `-D warnings` catches dead_code — need `#[allow(dead_code)]` on modules with future-use functions
+  - clippy prefers `next_back()` over `last()` for DoubleEndedIterator
+---
+
+## 2026-03-26 - US-002
+- Implemented audio loading and preprocessing in `src/audio.rs`
+- Symphonia-based decoding: loads local files, decodes packets to PCM f32
+- Multi-channel to mono conversion (averaging channels)
+- Linear interpolation resampling to 16kHz
+- 30-second chunking with zero-padding for last chunk
+- Also added `load_audio_from_bytes()` for future URL support (US-003)
+- 9 unit tests: chunking (exact, partial, single, empty, multiple), mono conversion, resampling (identity, up, down)
+- Files changed: src/audio.rs (new), src/main.rs (added module)
+- **Learnings for future iterations:**
+  - symphonia `SampleBuffer::copy_interleaved_ref` gives interleaved samples — need to deinterleave for mono conversion
+  - Empty audio edge case: return one zero-padded chunk (model still needs 30s input)
+  - `load_audio_from_bytes` takes `Vec<u8>` with optional extension hint for format detection
+---
+
+## 2026-03-26 - US-003
+- Implemented URL detection and audio download in `src/audio.rs`
+- `is_url()`: matches Python's exact check (`starts_with("http://")` or `starts_with("https://")`)
+- `download_audio()`: reqwest blocking client with indicatif progress bar (determinate if Content-Length, spinner otherwise)
+- `load_audio()`: unified entry point dispatching to file or URL path
+- `url_extension()`: extracts file extension from URL path (strips query/fragment)
+- 6 unit tests: URL detection (http, https, local paths, paths containing "http"), URL extension parsing
+- Files changed: src/audio.rs
+- **Learnings for future iterations:**
+  - reqwest blocking `response.content_length()` gives `Option<u64>` — use for determinate progress bar
+  - `std::io::Read` trait needed for reading response body in chunks
+  - URL extension extraction needs to strip query params and fragments before parsing
+---
+
+## 2026-03-26 - US-004
+- Implemented model loading from HuggingFace Hub in `src/model.rs`
+- `download_model()`: downloads config.json, tokenizer.json, model.safetensors via hf-hub
+- `select_device()`: maps --device-id to candle Device (mps/cuda/cpu with cfg-gated fallbacks)
+- `load_mel_filters()`: loads 80 or 128 bin mel filterbank from embedded binary assets
+- `load_whisper_model()`: full pipeline — device selection, download, config/tokenizer/weights loading
+- `WhisperModel` struct bundles model, config, tokenizer, device, mel_filters
+- FP16 on GPU, F32 on CPU (matching Python's torch_dtype=float16)
+- 5 unit tests (device selection, token handling) + 2 ignored integration tests (require network)
+- Files changed: src/model.rs (new), src/main.rs (module), Cargo.toml (byteorder dep), assets/ (mel filter binaries)
+- **Learnings for future iterations:**
+  - hf-hub 0.3: use `ApiBuilder::new().with_token(Some(...)).build()` not `Api::new_with_token()`
+  - `#[cfg(feature = "cuda")]` blocks need self-contained variables to avoid unused warnings
+  - Mel filter files from candle-examples can be embedded via `include_bytes!`
+  - `VarBuilder::from_mmaped_safetensors` is `unsafe` (memory-mapped file access)
+---
+
+## 2026-03-26 - US-005
+- Implemented mel spectrogram computation and single-chunk greedy decoding in `src/inference.rs`
+- `pcm_to_mel_tensor()`: converts PCM samples to mel spectrogram tensor via candle's `audio::pcm_to_mel`
+- `decode_chunk()`: full single-chunk inference pipeline — mel → encoder → greedy decode with timestamps
+- Greedy decoder: builds prompt [SOT, language?, task], decodes with KV cache, extracts timestamp segments
+- `suppress_and_argmax()`: applies token suppression and returns best token
+- Supports --task (transcribe/translate) and --language ("None" = auto-detect, otherwise forced)
+- Segment struct with text, start time, optional end time
+- 10 unit tests: suppress_and_argmax (4), timestamp math (3), segment offset (1), mel tensor shape (2)
+- Files changed: src/inference.rs (new), src/main.rs (added module)
+- **Learnings for future iterations:**
+  - `pcm_to_mel` output frame count differs from `N_FRAMES` constant due to internal padding — don't hardcode expected frame count
+  - Decoder `forward()` third param is `flush_kv_cache` (true on first call, false after)
+  - `final_linear()` projects hidden states to vocab logits — must call separately after forward
+  - Logits from GPU come as F16 — convert to F32 before argmax
+  - Timestamp token at `no_timestamps_token + 1` starts at 0.0s, each +1 = 0.02s
+---
+
+## 2026-03-26 - US-006
+- Implemented batched inference pipeline with progress bar in `src/inference.rs`
+- `transcribe()`: chunks audio, batches mel spectrograms through encoder (up to batch_size), decodes each sequentially
+- Refactored `decode_chunk()` to extract `decode_with_features()` for reuse with pre-computed encoder features
+- Wired up full transcription pipeline in `src/main.rs` (audio load → model load → batched transcribe)
+- Added `.en` model task stripping in main.rs
+- 6 new unit tests: batch iteration (exact, remainder, single, larger), chunk offset calculation, mel batch stacking
+- Files changed: src/inference.rs, src/main.rs
+- **Learnings for future iterations:**
+  - `Tensor::cat(&mels, 0)` stacks along batch dimension — each mel is already (1, n_mel, n_frames)
+  - `batch_features.i(i..i+1)` extracts a single item while preserving the batch dimension
+  - Decoder KV cache must be reset per-sequence — batched decoding isn't possible with current candle whisper decoder
+  - `batch_size.max(1)` ensures we never step_by(0) which would panic
+---
+
+## 2026-03-26 - US-007
+- Implemented output JSON generation and file writing in `src/output.rs`
+- `build_output()`: builds serde Value with correct field order (speakers, chunks, text)
+- `write_output()`: writes pretty-printed JSON to file with UTF-8 encoding
+- `print_success_message()`: prints exact Python-matching success message to stdout
+- Timestamps serialize as `[f64, f64]` or `[f64, null]` via tuple struct
+- Unicode preserved in output (serde_json default matches Python's ensure_ascii=False)
+- Wired up output in main.rs replacing placeholder
+- 12 unit tests: JSON structure, field order, chunks, null timestamps, text concat, unicode, empty, single, write/read, timestamp format, success messages
+- Files changed: src/output.rs (new), src/main.rs, Cargo.toml
+- **Learnings for future iterations:**
+  - `serde_json::Value` uses BTreeMap by default which sorts keys alphabetically — need `preserve_order` feature for insertion-order serialization
+  - Tuple struct with `#[derive(Serialize)]` serializes as JSON array — perfect for `[start, end]` timestamps
+  - `Option<f64>` serializes as `null` in JSON when `None` — matches Python behavior
+---
+
+## 2026-03-26 - US-008
+- Implemented output conversion subcommand in `src/convert.rs`
+- SRT format: sequential index (1-based), HH:MM:SS,mmm --> HH:MM:SS,mmm, text, blank line between entries
+- VTT format: WEBVTT header, sequential index, HH:MM:SS.mmm --> HH:MM:SS.mmm, text, blank line
+- TXT format: plain text, one chunk per line, no timestamps
+- Output filename is always `output.<format>` in the output directory
+- --verbose prints each entry to stdout as processed
+- Wired up convert subcommand in main.rs (replaced stub)
+- 15 unit tests: timestamp formatting (SRT/VTT), conversion (SRT/VTT/TXT), index numbering, headers, separators, null timestamps, empty chunks, text trimming, end-to-end file I/O for all 3 formats
+- Files changed: src/convert.rs (new), src/main.rs
+- **Learnings for future iterations:**
+  - SRT uses comma for milliseconds, VTT uses dot — easy to mix up
+  - Whisper text often has leading space — trim when converting to subtitle formats
+  - Null end timestamps: fall back to start time (same as Python behavior)
+  - Deserialization with tuple for timestamp `(f64, Option<f64>)` handles both `[f64, f64]` and `[f64, null]`
+---
+
+## 2026-03-26 - US-009
+- Implemented end-to-end integration tests and Flash Attention support
+- CLI integration tests: 15 tests covering arg validation (exit code 2), runtime errors (exit code 1), --flash True/False, --diarization_model underscore, convert subcommand validation
+- Audio integration tests: 3 tests with programmatically generated WAV files (mono 16kHz, stereo 44.1kHz, WAV format verification)
+- Convert integration tests: 5 tests verifying byte-for-byte SRT/VTT/TXT output, verbose mode, output filename convention
+- Flash Attention: wired --flash flag with compile-time feature gate warning (flash-attn cargo feature)
+- SDPA is default when --flash False or flash-attn feature not compiled
+- Added assert_cmd and predicates as dev-dependencies for CLI integration testing
+- Files changed: Cargo.toml, src/main.rs, tests/cli_integration.rs (new), tests/audio_integration.rs (new), tests/convert_integration.rs (new)
+- **Learnings for future iterations:**
+  - `assert_cmd::Command::cargo_bin()` provides clean integration test interface for CLI binaries
+  - WAV file generation is straightforward: RIFF header + fmt chunk + data chunk with PCM i16 samples
+  - Integration tests that exercise audio loading can verify "no audio error" in stderr without needing a model
+  - Flash Attention in candle is compile-time via `flash-attn` feature flag, not runtime configurable
+  - `env!("CARGO_BIN_EXE_fast-whisper-rs")` available in integration tests for direct binary path
+---
