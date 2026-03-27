@@ -40,6 +40,13 @@ pub fn pcm_to_mel_tensor(
     let n_mel = config.num_mel_bins;
     let n_frames = mel.len() / n_mel;
     let mel_tensor = Tensor::from_vec(mel, (1, n_mel, n_frames), device)?;
+    // Truncate to N_FRAMES (3000) so the encoder conv layers produce exactly
+    // max_source_positions (1500) features, matching the positional embeddings.
+    let mel_tensor = if n_frames > m::N_FRAMES {
+        mel_tensor.narrow(2, 0, m::N_FRAMES)?
+    } else {
+        mel_tensor
+    };
     if !device.is_cpu() {
         Ok(mel_tensor.to_dtype(DType::F16)?)
     } else {
