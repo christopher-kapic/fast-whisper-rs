@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 /// Default GitHub release URL base for diarization model artifacts.
 const DEFAULT_RELEASE_URL: &str =
-    "https://github.com/chriswmann/fast-whisper-rs/releases/download/diarization-models-v1";
+    "https://github.com/christopher-kapic/fast-whisper-rs/releases/download/diarization-models-v1";
 
 /// Model artifact filenames.
 const SEGMENTATION_MODEL: &str = "segmentation.onnx";
