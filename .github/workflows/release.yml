@@ -53,12 +53,16 @@ jobs:
         include:
           - target: x86_64-apple-darwin
             os: macos-latest
+            features: ""
           - target: aarch64-apple-darwin
             os: macos-latest
+            features: metal
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
+            features: ""
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
+            features: ""
 
     runs-on: ${{ matrix.os }}
 
@@ -85,7 +89,12 @@ jobs:
           echo "PKG_CONFIG_ALLOW_CROSS=1" >> "$GITHUB_ENV"
 
       - name: Build
-        run: cargo build --release --target ${{ matrix.target }}
+        run: |
+          if [ -n "${{ matrix.features }}" ]; then
+            cargo build --release --target ${{ matrix.target }} --features ${{ matrix.features }}
+          else
+            cargo build --release --target ${{ matrix.target }}
+          fi
 
       - name: Package
         run: |
